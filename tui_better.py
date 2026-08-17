@@ -171,6 +171,7 @@ def edge_server_worker(edge: EdgeNode):
                 # Update web JSON feed with successful decryption
                 payload_json = json.loads(decrypted_data.decode('utf-8'))
                 web_data[dev_id]["last_payload"] = payload_json
+                web_data[dev_id]["last_encrypted"] = packet['encrypted_payload'].hex()
                 web_data[dev_id]["status"] = "SECURE"
                 
                 if edge_stats["processed"] % 15 == 0:
@@ -219,11 +220,11 @@ def build_topology() -> Panel:
         f"  {n1[3]}      {s1['rate']:>5.2f} pkts/s -----------------+",
         f"  {n1[4]}                                    |",
         f"  {n1[5]}                                    v",
-        f"                                             +--------------------+",
-        f"  {n2[0]}                          | [cyan]=[/cyan] Edge-Node-01     |",
-        f"  {n2[1]}      Transmitting...       | Role: EDGE GATEWAY |",
-        f"  {n2[2]}      {s2['rate']:>5.2f} pkts/s ------> | Status: [green]ONLINE[/green]     |",
-        f"  {n2[3]}                          +--------------------+",
+        f"                                             +--------------------+           +----------------------+",
+        f"  {n2[0]}                          | [cyan]=[/cyan] Edge-Node-01     |           | [magenta]*[/magenta] Datacenter-01      |",
+        f"  {n2[1]}      Transmitting...       | Role: EDGE GATEWAY | ===[cyan]QKD[/cyan]==> | Role: QKD RECEIVER   |",
+        f"  {n2[2]}      {s2['rate']:>5.2f} pkts/s ------> | Status: [green]ONLINE[/green]     | [cyan] (Fiber) [/cyan] | Status: [yellow]STANDBY[/yellow]      |",
+        f"  {n2[3]}                          +--------------------+           +----------------------+",
         f"  {n2[4]}                                    ^",
         f"  {n2[5]}                                    |",
         f"                                                       |",
@@ -244,6 +245,24 @@ def build_info() -> Panel:
     cpu = "||||||    "
     mem = "||||||||  "
     
+    def format_node(dev_id):
+        p_dict = dict(web_data[dev_id].get("last_payload", {}))
+        
+        # Extract only the actual biological data (ECG, Apnea, etc)
+        vital_data = p_dict.get("data", {})
+        p = str(vital_data)
+        e = web_data[dev_id].get("last_encrypted", "")
+        
+        if len(p) > 42: p = p[:39] + "..."
+        if len(e) > 35: e = e[:32] + "..."
+        
+        return f"[green]{p}[/green]\n         [magenta]Wire Ciphertext: {e}[/magenta]"
+
+    # Grab a live snippet of the actual clinical telemetry (ignoring static IDs)
+    pl1 = format_node("DEV-1")
+    pl2 = format_node("DEV-2")
+    pl3 = format_node("DEV-3")
+    
     info = f"""
 Edge Node ID    : Edge-Node-01
 Uptime          : {uptime}
@@ -253,6 +272,11 @@ Incoming Rate   : {total_rate:.2f} pkts/s
 Processed Pkts  : {edge_stats['processed']}
 Dropped Pkts    : {edge_stats['dropped']}
 Tampered Pkts   : {edge_stats['errors']}
+
+[bold cyan]LIVE DECRYPTED & RAW TRANSFERS[/bold cyan]
+Node-01: {pl1}
+Node-02: {pl2}
+Node-03: {pl3}
 """
     return Panel(Text.from_markup(info), title="[bold cyan]EDGE NODE INFO[/bold cyan]", border_style="cyan")
 
