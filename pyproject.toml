@@ -1,0 +1,17 @@
+[project]
+name = "hybrid-iomt-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Vamsi Krishna", email = "vamsikrishnapullabhotla23@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+hybrid-iomt-project = "hybrid_iomt_project:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
