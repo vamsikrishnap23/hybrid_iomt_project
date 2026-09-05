@@ -56,9 +56,24 @@ python tui_better.py
 *(Press `1`, `2`, or `3` to trigger various interactive physical and cyber attack scenarios!)*
 
 ### 2. Run the Academic Benchmarks
-Execute the headless benchmarking engine to generate the latency and QBER Matplotlib graphs.
+Execute the headless benchmarking engines to generate the empirical Matplotlib graphs.
 ```bash
 cd tests
 python benchmark_engine.py
+python benchmark_extended.py
 ```
-*(Graphs will be generated in the test directory).*
+*(Graphs will be saved in the `assets/` directory).*
+
+## Empirical Results
+
+### 1. End-to-End Latency vs. Payload Size
+![Latency Benchmark](assets/fig1_latency_benchmark.png)
+
+### 2. QBER vs. Interception Probability
+![QBER Benchmark](assets/fig2_qber_benchmark.png)
+
+### 3. Cryptographic Algorithm Overhead
+![Algorithm Comparison](assets/fig3_algorithm_comparison.png)
+
+### 4. QKD Key Pool Stress Test
+![Buffer Stress](assets/fig4_buffer_stress.png)
