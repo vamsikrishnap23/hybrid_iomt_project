@@ -1,3 +1,5 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 import time
 import json
 import threading
@@ -21,8 +23,12 @@ from rich.text import Text
 from multi_device_engine import IoMTDevice
 from pqc_nodes import WearableNode, EdgeNode
 from physics_engine import PhysicsEngine
+from datacenter_node import DatacenterNode
+from qkd_key_manager import QKDKeyPool
 
 # --- GLOBAL STATE ---
+qkd_pool = None
+datacenter = None
 event_log = deque(maxlen=20)
 device_stats = {
     "DEV-1": {"status": "ONLINE", "rate": 0, "pkts": 0, "color": "green", "bloat": 0, "rssi": -30},
@@ -168,21 +174,32 @@ def edge_server_worker(edge: EdgeNode):
                 edge_stats["processed"] += 1
                 device_stats[dev_id]["color"] = "green"
                 
+                try:
+                    enc_data, nonce, qkd_key = edge.translate_and_forward(decrypted_data)
+                    final_payload = datacenter.receive_and_decrypt(enc_data, nonce, qkd_key)
+                    if final_payload:
+                        web_data[dev_id]["status"] = "VERIFIED (QKD & PQC)"
+                    else:
+                        web_data[dev_id]["status"] = "DATACENTER REJECTED"
+                except Exception as e:
+                    web_data[dev_id]["status"] = "QKD POOL EMPTY"
+                
                 # Update web JSON feed with successful decryption
                 payload_json = json.loads(decrypted_data.decode('utf-8'))
                 web_data[dev_id]["last_payload"] = payload_json
                 web_data[dev_id]["last_encrypted"] = packet['encrypted_payload'].hex()
-                web_data[dev_id]["status"] = "SECURE"
                 
                 if edge_stats["processed"] % 15 == 0:
-                    log_event("INFO", f"Verified packet from {dev_id} ({len(packet['encrypted_payload'])}b)")
+                    log_event("INFO", f"Verified & Translated packet from {dev_id}")
 
 # --- UI RENDERING ---
 def build_header() -> Panel:
     t = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    qber = getattr(qkd_pool, 'last_qber', 0.0) if qkd_pool else 0.0
+    pool_size = qkd_pool.key_queue.qsize() if qkd_pool else 0
     header_text = Text()
-    header_text.append(f" IoT Edge Network Monitor   |   Scenario: {current_scenario}", style="bold cyan")
-    header_text.append(f"{' '*20}Time: {t}    Status: RUNNING", style="green")
+    header_text.append(f" IoT Edge Network Monitor | Scenario: {current_scenario} | QKD Pool: {pool_size}/50 | QBER: {qber*100:.1f}%\n", style="bold cyan")
+    header_text.append(f"Time: {t}    Status: RUNNING", style="green")
     return Panel(header_text, style="white")
 
 def build_footer() -> Panel:
@@ -223,7 +240,7 @@ def build_topology() -> Panel:
         f"                                             +--------------------+           +----------------------+",
         f"  {n2[0]}                          | [cyan]=[/cyan] Edge-Node-01     |           | [magenta]*[/magenta] Datacenter-01      |",
         f"  {n2[1]}      Transmitting...       | Role: EDGE GATEWAY | ===[cyan]QKD[/cyan]==> | Role: QKD RECEIVER   |",
-        f"  {n2[2]}      {s2['rate']:>5.2f} pkts/s ------> | Status: [green]ONLINE[/green]     | [cyan] (Fiber) [/cyan] | Status: [yellow]STANDBY[/yellow]      |",
+        f"  {n2[2]}      {s2['rate']:>5.2f} pkts/s ------> | Status: [green]ONLINE[/green]     | [cyan] (Fiber) [/cyan] | Status: [green]ONLINE[/green]       |",
         f"  {n2[3]}                          +--------------------+           +----------------------+",
         f"  {n2[4]}                                    ^",
         f"  {n2[5]}                                    |",
@@ -285,7 +302,12 @@ def build_logs() -> Panel:
     return Panel(log_text, title="[bold cyan]LOGS[/bold cyan]", border_style="cyan")
 
 def main():
+    global qkd_pool, datacenter
     console = Console()
+    
+    qkd_pool = QKDKeyPool(max_pool_size=50)
+    qkd_pool.start()
+    datacenter = DatacenterNode(qkd_pool=qkd_pool)
     
     # Start Web API
     start_web_server()
@@ -298,7 +320,7 @@ def main():
         IoMTDevice("DEV-3", "slp01a", "slpdb", "Sleep Tracker")
     ]
     
-    edge = EdgeNode("127.0.0.1", 5005)
+    edge = EdgeNode("127.0.0.1", 5005, qkd_pool=qkd_pool)
     wearables = {dev.device_id: WearableNode(dev.device_id, "127.0.0.1", 5005) for dev in devices}
     queues = {dev.device_id: Queue() for dev in devices}
     
@@ -341,6 +363,8 @@ def main():
                 layout["footer"].update(build_footer())
                 time.sleep(0.25)
         except KeyboardInterrupt:
+            if qkd_pool:
+                qkd_pool.stop()
             pass
 
 if __name__ == "__main__":

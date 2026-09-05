@@ -62,8 +62,9 @@ class WearableNode:
             return False, distance, rssi, simulated_iot_ms
 
 class EdgeNode:
-    def __init__(self, bind_ip, bind_port, kem_algorithm="ML-KEM-512"):
+    def __init__(self, bind_ip, bind_port, kem_algorithm="ML-KEM-512", qkd_pool=None):
         self.kem_alg = kem_algorithm
+        self.qkd_pool = qkd_pool
         self.kem = oqs.KeyEncapsulation(self.kem_alg)
         self.public_key = self.kem.generate_keypair()
         self.edge_delay_multiplier = 15 
@@ -96,3 +97,22 @@ class EdgeNode:
             return decrypted_data, simulated_edge_ms
         except InvalidTag:
             return b"ERROR", 0.0
+
+    def translate_and_forward(self, raw_payload):
+        """
+        Cryptographic Translator: 
+        Re-encrypts the raw payload using a symmetric quantum key from the QKD pool.
+        """
+        if self.qkd_pool is None:
+            raise ValueError("QKDKeyPool is not initialized on EdgeNode.")
+            
+        qkd_key = self.qkd_pool.get_key()
+        aesgcm = AESGCM(qkd_key)
+        import os
+        nonce = os.urandom(12)
+        encrypted_payload = aesgcm.encrypt(nonce, raw_payload, None)
+        
+        # Simulated hardware routing delay of 1.5ms
+        time.sleep(0.0015)
+        
+        return encrypted_payload, nonce, qkd_key

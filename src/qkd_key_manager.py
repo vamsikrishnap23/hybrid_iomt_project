@@ -25,6 +25,7 @@ class QKDKeyPool:
         self.max_pool_size = max_pool_size
         self.num_qubits = num_qubits_per_key
         self.qber_threshold = qber_threshold
+        self.last_qber = 0.0
         
         self.key_queue = queue.Queue(maxsize=max_pool_size)
         self._stop_event = threading.Event()
@@ -54,6 +55,7 @@ class QKDKeyPool:
                     # Run the expensive quantum simulation
                     result = self.engine.run_protocol()
                     qber = result["qber"]
+                    self.last_qber = qber
                     
                     if qber <= self.qber_threshold:
                         # Pool the generated AES-256 key
